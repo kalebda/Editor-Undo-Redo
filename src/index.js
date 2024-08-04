@@ -283,24 +283,22 @@ export default class Undo {
       if (this.blockWasDeleted(state, nextState)) {
         this.insertDeletedBlock(state, nextState, index)
       } else if (this.contentWasCopied(state, nextState, index)) {
-        await this.blocks.render({ blocks: state })
+        await this.blocks.render({ blocks: state }, true)
         this.caret.setToBlock(index, "end")
       } else if (index < nextIndex && this.blockWasSkipped(state, nextState)) {
         await this.blocks.delete(nextIndex)
         this.caret.setToBlock(index, "end")
       } else if (blockCount > state.length) {
-        await this.blocks.render({ blocks: state })
+        await this.blocks.render({ blocks: state }, true)
         this.setCaretIndex(index, caretIndex)
       } else if (this.blockWasDropped(state, nextState)) {
-        await this.blocks.render({ blocks: state })
+        await this.blocks.render({ blocks: state }, true)
         this.caret.setToBlock(index, "end")
       } else if (this.contentChangedInNoFocusBlock(index, nextIndex)) {
         const { id } = this.blocks.getBlockByIndex(nextIndex)
-
         await this.blocks.update(id, state[nextIndex].data)
         this.setCaretIndex(index, caretIndex)
       }
-
       const block = this.blocks.getBlockByIndex(index)
       if (block) {
         await this.blocks.update(block.id, state[index].data)
@@ -367,7 +365,7 @@ export default class Undo {
     const block = state[index - 1]
     if (this.editor.blocks.getById(block.id))
       return this.blocks.update(block.id, block.data)
-    return this.blocks.render({ blocks: state })
+    return this.blocks.render({ blocks: state }, true)
   }
 
   /**
@@ -382,8 +380,19 @@ export default class Undo {
         this.stack[this.position - 1]
 
       if (this.blockWasDeleted(prevState, state)) {
-        await this.blocks.delete()
-        this.caret.setToBlock(index, "end")
+        // Find the index of the block that was deleted
+        const deletedIndex = prevState.findIndex(
+          (block, i) =>
+            !state.some((stateBlock) => stateBlock.id === block.id) ||
+            (state[i] && state[i].id !== block.id)
+        )
+
+        if (deletedIndex !== -1) {
+          await this.blocks.delete(deletedIndex)
+          // Set caret to the block after the deleted one, or the last block if we deleted the last one
+          const newIndex = Math.min(deletedIndex, state.length - 1)
+          this.caret.setToBlock(newIndex, "end")
+        }
       } else if (this.blockWasSkipped(state, prevState)) {
         await this.insertSkippedBlocks(prevState, state, index)
         this.caret.setToBlock(index, "end")
@@ -391,10 +400,9 @@ export default class Undo {
         this.blockWasDropped(state, prevState) &&
         this.position !== 1
       ) {
-        await this.blocks.render({ blocks: state })
+        await this.blocks.render({ blocks: state }, true)
         this.caret.setToBlock(index, "end")
       }
-
       this.onUpdate()
       const block = this.blocks.getBlockByIndex(index)
       if (block) {
